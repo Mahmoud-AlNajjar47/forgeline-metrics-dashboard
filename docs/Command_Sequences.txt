@@ -1,0 +1,129 @@
+FORGELINE DEVOPS METRICS DASHBOARD - BASIC COMMAND SEQUENCES
+=============================================================
+Only standard, basic Git commands are used. Lines starting with # are comments.
+
+WHY THIS MATTERS
+Following the same exact commands every time keeps history clean, protects
+the upstream baseline and prevents broken builds.
+
+KEY TERMS
+- Configuration Item (CI): a file under version control (e.g. config/metrics_config.py)
+- Working copy: your editable files on disk
+- Staging area: where chosen changes wait for the next commit
+- Repository (repo): the stored history of the project
+- Upstream: the shared GitHub repository (remote name: origin)
+
+-------------------------------------------------------------
+SEQUENCE 1: CREATE AND SWITCH TO A FEATURE BRANCH
+-------------------------------------------------------------
+CORE IDEA: isolate your changes from the upstream baseline (main).
+
+git checkout main                          # switch to the stable baseline
+git fetch origin                           # download upstream information
+git merge origin/main                      # bring local main up to date
+git checkout -b feature/refresh-interval   # create the branch AND switch to it
+git branch                                 # list branches; * marks the current one
+
+-------------------------------------------------------------
+SEQUENCE 2: WORKING COPY -> STAGING AREA -> REPOSITORY
+-------------------------------------------------------------
+CORE IDEA: a Configuration Item moves through three local states.
+
+vi config/metrics_config.py                # 1. edit the CI in the working copy
+git status                                 # shows the file as "modified" (unstaged)
+git add config/metrics_config.py           # 2. move the change to the staging area
+git status                                 # shows the file under "Changes to be committed"
+git commit -m "Change refresh interval to 60 seconds"   # 3. save a snapshot in the repo
+git log --oneline                          # confirm the new commit and its Commit ID
+
+-------------------------------------------------------------
+SEQUENCE 3: REVIEW LOCAL DIFFS BEFORE PUSHING
+-------------------------------------------------------------
+CORE IDEA: confirm that no unintended changes are included.
+
+git status                                 # which files changed or are staged?
+git diff                                   # working copy vs staging area (unstaged edits)
+git diff --staged                          # staging area vs last commit (about to be committed)
+git diff origin/main                       # everything that differs from upstream main
+git log --oneline origin/main..HEAD        # commits that will be pushed
+
+# How to read a diff:
+#   lines starting with "-" were removed
+#   lines starting with "+" were added
+# If you see a file or line you did not mean to change, undo it BEFORE pushing.
+
+Then share the branch:
+git push -u origin feature/refresh-interval   # upload branch to upstream; then open a pull request
+
+-------------------------------------------------------------
+SEQUENCE 4: FETCH UPSTREAM CHANGES AND RESOLVE A MERGE CONFLICT
+-------------------------------------------------------------
+SCENARIO
+config/metrics_config.py starts on main with:
+    REFRESH_INTERVAL_SECONDS = 15
+    DASHBOARD_NAME = "Metrics Dashboard"
+    MAX_WIDGETS = 12
+- On feature/refresh-interval you changed the refresh interval to 60 and committed.
+- On main, Dana changed it to 30 and renamed the dashboard to "Delivery Metrics".
+- Agreed result: REFRESH_INTERVAL_SECONDS = 45 and DASHBOARD_NAME = "Delivery Metrics".
+
+STEP 1 - Check status (working copy must be clean)
+git checkout feature/refresh-interval
+git status
+# Expected: "nothing to commit, working tree clean"
+
+STEP 2 - Fetch upstream and merge main into the feature branch
+git fetch origin
+git merge origin/main
+# Expected output:
+#   Auto-merging config/metrics_config.py
+#   CONFLICT (content): Merge conflict in config/metrics_config.py
+#   Automatic merge failed; fix conflicts and then commit the result.
+
+STEP 3 - Confirm which file is in conflict
+git status
+# Expected: "both modified: config/metrics_config.py" under "Unmerged paths"
+
+STEP 4 - Read the conflict markers
+cat config/metrics_config.py
+# The file now contains:
+#   <<<<<<< HEAD
+#   REFRESH_INTERVAL_SECONDS = 60
+#   DASHBOARD_NAME = "Metrics Dashboard"
+#   =======
+#   REFRESH_INTERVAL_SECONDS = 30
+#   DASHBOARD_NAME = "Delivery Metrics"
+#   >>>>>>> origin/main
+#   MAX_WIDGETS = 12
+#
+# How to read it:
+#   <<<<<<< HEAD        start of YOUR version (feature branch)
+#   =======             divider between the two versions
+#   >>>>>>> origin/main end of THEIR version (upstream main)
+
+STEP 5 - Edit the file and keep the agreed result
+vi config/metrics_config.py
+# In vi: delete the three marker lines and the unwanted lines (put the cursor on a line
+# and press dd), then change the interval to 45. Save with :wq.
+
+Final content of config/metrics_config.py after resolution:
+    REFRESH_INTERVAL_SECONDS = 45
+    DASHBOARD_NAME = "Delivery Metrics"
+    MAX_WIDGETS = 12
+
+STEP 6 - Confirm no conflict markers are left
+grep -n -E "^(<<<<<<<|=======|>>>>>>>)" config/metrics_config.py
+# Expected: no output at all. Any output means markers remain; go back to STEP 5.
+
+STEP 7 - Stage the resolved file
+git add config/metrics_config.py
+git status
+# Expected: "All conflicts fixed but you are still merging."
+
+STEP 8 - Commit the merge
+git commit -m "Merge main into feature/refresh-interval; set refresh interval to 45 seconds"
+git log --oneline
+# Expected: the newest entry is the merge commit.
+
+STEP 9 - Share the result
+git push origin feature/refresh-interval
